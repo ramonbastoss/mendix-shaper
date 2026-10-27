@@ -1,0 +1,11 @@
+# The < 2 pin is mandatory: mcp 2.x removed the `mcp.server.fastmcp` module,
+# which server.py imports on its first line. Without the pin the server does
+# not even start.
+mcp[cli]<2
+
+# BSON encoding and decoding for .mxunit files, which is the whole mechanism
+# here. The import is `bson`, but it ships inside pymongo. The PyPI package
+# literally named `bson` is an unrelated project: installing it shadows this
+# one and every read and write starts failing on a missing `bson.decode`. If
+# that happens, uninstall `bson` and keep pymongo.
+pymongo>=4

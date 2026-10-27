@@ -1,0 +1,20 @@
+# Local, per-machine configuration. Never versioned: it holds absolute paths
+# that are only true on one person's machine. Copy projects.example.json to
+# projects.json and fill it in.
+/projects.json
+
+# Tool output: validation reports and the per-project baselines they are
+# compared against. Derived from a model on this machine, reproducible by
+# running tool_validate_model again.
+/temp/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.venv/
+
+# IDEs
+.vscode/
+.idea/
