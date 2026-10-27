@@ -40,6 +40,15 @@ shape of the risk.
       process is not writing; it does not prove Studio Pro has the model open
       in memory, which is the case that actually loses work. Either find a real
       detection or make the refusal louder.
+- [ ] **A misspelled argument is dropped, not refused.** FastMCP builds each
+      tool's schema from the function signature and leaves
+      `additionalProperties` unset, so JSON Schema allows extras and anything
+      the caller passes under a name the tool does not declare is silently
+      discarded. On a reader that is harmless. On a write tool it means the
+      call runs with a default in place of the argument that was meant to
+      govern it - which is the kind of failure that looks like success in the
+      report. Settle this before the first editing tool, not after: either
+      tighten the schema or have each write tool reject unknown keys itself.
 - [ ] **No dry run.** `write_unit` either writes or raises. A caller cannot ask
       "what would this change" and get the diff back without committing to it.
       Worth having before the first editing tool, not after.

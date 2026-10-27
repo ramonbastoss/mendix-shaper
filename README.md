@@ -3,8 +3,9 @@
 MCP server that edits a Mendix app's model from outside Studio Pro, by writing
 the `.mxunit` files directly — no Model SDK, no model server, no working copy.
 
-The write-side counterpart to [mendix-mapper](../mendix-mapper-public), which
-reads the same model and never changes it. Two servers rather than one on
+The write-side counterpart to
+[mendix-mapper](https://github.com/ramonbastoss/mendix-mapper), which reads the
+same model and never changes it. Two servers rather than one on
 purpose: the split between reading and writing has to be visible in the tool
 name that reaches the model, not buried in documentation. `mcp__mendix-mapper__`
 answers questions; `mcp__mendix-shaper__` changes things.
@@ -101,9 +102,13 @@ rather than what the app already looked like.
 
 ```
 python -m venv venv
-venv\Scripts\pip install -r requirements.txt
+.\venv\Scripts\python.exe -m pip install -r requirements.txt
 copy projects.example.json projects.json
 ```
+
+Call `.\venv\Scripts\python.exe` explicitly rather than activating the
+environment: the MCP client launches that exact executable, so it is the one
+worth proving works.
 
 Fill in `projects.json` with the path to your `.mpr` and to the `mx.exe` of the
 matching Studio Pro version, then register the server:
