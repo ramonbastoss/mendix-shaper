@@ -104,6 +104,25 @@ the repaired state was not byte-compared, because the click lives in Studio
 Pro's in-memory model until a save — see
 [editing-alongside-studio-pro.md](editing-alongside-studio-pro.md).)
 
+## Removal is symmetric
+
+Measured on the same entity, from a commit where Studio Pro deleted three
+attributes in one go: **deleting an attribute also deletes its `MemberAccess`
+from every access rule.** Nothing else moved — the rule count, the rules' own
+keys and the entity's keys were all unchanged.
+
+One of the three had been written without propagation, so it had no
+`MemberAccess` to delete. It produced no orphan and no complaint; the rules
+simply never mentioned it. That is worth knowing in both directions: a
+`MemberAccess` is bound to its attribute by qualified name, so the pair is
+created together, removed together, and a missing one is an absence rather
+than a dangling reference.
+
+So a delete tool has the same obligation as a create tool, in reverse. Dropping
+the attribute and leaving its `MemberAccess` behind would be the mirror of the
+bug above — except that this one points at a name that no longer resolves,
+which is a different and probably louder kind of broken.
+
 ## What this means for a write tool
 
 - **Propagate, or refuse.** An editing tool that appends to `Attributes[]` and
@@ -127,5 +146,9 @@ Pro's in-memory model until a save — see
   there nothing to be out of date with?
 - Attribute types other than integer, and `Value` kinds other than
   `StoredValue` (a calculated attribute has a different `Value` document).
-- Deleting an attribute, which presumably has to remove the `MemberAccess`
-  entries as well, and has not been measured.
+- Renaming an attribute. A `MemberAccess` refers to it by qualified name, so a
+  rename has to sweep the access rules too, but whether Studio Pro does only
+  that has not been checked.
+- Whether a `MemberAccess` left pointing at a deleted attribute produces a
+  consistency error or takes the loader down. The symmetric delete above means
+  Studio Pro never produces that state; a write tool could.
