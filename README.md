@@ -29,6 +29,12 @@ microflow needs a start event, so nothing here stops you from writing one that
 does not have it. See **Safety** below for what that costs and how it is
 contained.
 
+What partly fills the gap is measurement. [`docs/`](docs/) collects what Studio
+Pro actually does to a model and what Mendix notices when a write does not do
+the same — starting with the one that is easy to get half right, since creating
+an attribute is also an access-rule change. Those notes are what an editing
+tool has to encode, because nothing in the format will enforce it.
+
 ## How a Mendix model is stored
 
 Two files, and both have to stay in step:
