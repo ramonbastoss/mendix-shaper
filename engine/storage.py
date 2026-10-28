@@ -1,8 +1,15 @@
 """Reading and writing one `.mxunit`, and keeping the `.mpr` in step.
 
-This module is the engine, not a tool: nothing registers it with the server.
-Everything that edits a Mendix model goes through `write_unit` below, so the
-guards live in one place instead of in every caller.
+The bottom of the engine: bytes and files, and no Mendix semantics at all.
+Nothing here knows what an entity is. Everything that edits a Mendix model
+goes through `write_unit` below, so the guards live in one place instead of in
+every caller.
+
+**`engine/` never imports MCP.** The dependency runs one way - `tools/` calls
+in here, nothing in here knows a server exists - because that is what makes
+this half testable on its own. An operation can be run a thousand times over a
+corpus and compared against what Studio Pro produced; a tool behind a stdio
+transport cannot.
 
 A unit is a BSON document on disk and a row in the `.mpr`, and the two have to
 agree. The row carries `ContentsHash` = `base64(sha256(blob))`. Mendix will

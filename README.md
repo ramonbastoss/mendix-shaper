@@ -47,8 +47,31 @@ Two files, and both have to stay in step:
   that is `base64(sha256(blob))`.
 
 So writing a unit is three steps: decode, edit the dictionary, encode; write
-the blob; update that row's `ContentsHash`. `tools/_mxunit.py` is that, and
+the blob; update that row's `ContentsHash`. `engine/storage.py` is that, and
 nothing more.
+
+## How the repository is laid out
+
+An MCP server is a contract between something that improvises and something
+that does not. The deterministic half is usually an API somebody else wrote.
+Here there is none to call — so it has to be built, and kept separable from
+the server that exposes it.
+
+| | |
+|---|---|
+| `engine/` | does the work. Knows the model, knows nothing about MCP. |
+| `tools/` | one module per exposed tool: validate arguments, call the engine, shape the answer. |
+| `server.py` | registration, and the docstring each tool is read through. |
+| `docs/` | what Studio Pro does, measured — see [`docs/`](docs/). |
+
+The dependency runs one way, and that is the whole point of the split: the
+engine can be exercised directly, over a corpus, against what Studio Pro
+actually produced, which is the only way "deterministic" gets to mean anything
+here. Behind a stdio transport none of that is reachable.
+
+`engine/storage.py` is the bottom of it — bytes, files, hashes, no Mendix
+semantics. The layer above it, the one that knows an attribute is also an
+access-rule change, is where the next work goes.
 
 ## Safety
 
@@ -96,9 +119,9 @@ refuses if it cannot — but it is a guard, not a guarantee.
 
 **No editing tool is registered yet**, and that is deliberate rather than
 unfinished: the write primitive is proven, the shape of the editing surface is
-not. `tools/_mxunit.py` is the engine; deciding what gets exposed on top of it —
-and how narrow each tool's reach should be — is the open question in
-`BACKLOG.md`.
+not. Deciding what gets exposed — and how narrow each tool's reach should be —
+is the open question in `BACKLOG.md`. It is a question about `tools/` only,
+which is why the engine does not have to wait for it.
 
 An absolute error count means nothing on its own. `tool_validate_model` stores a
 baseline per project so that a run after a write reports *what the write did*

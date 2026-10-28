@@ -55,7 +55,7 @@ This was the part assumed to be expensive, and it is not.
 The full cycle, then:
 
 1. `git worktree add --detach <tmp> HEAD` from the IDE's working copy
-2. write the unit there, through `tools/_mxunit.py`
+2. write the unit there, through `engine/storage.py`
 3. commit and push the branch from the worktree
 4. `App > Update App` in Studio Pro
 

@@ -8,6 +8,11 @@ The write primitive works. What is undecided is what sits on top of it, and the
 decision matters more than the code does, because the shape of the tools is the
 shape of the risk.
 
+This is a question about `tools/`, not about `engine/`. The two are separate
+folders so that the engine can be built and proven against what Studio Pro
+produces while the surface question stays open — otherwise an undecided tool
+name holds up the code that does the actual work.
+
 - [ ] **Decide between a generic writer and narrow tools.** One
       `tool_set_value(unit, path, value)` would cover everything on day one and
       be impossible to review: the argument that distinguishes a safe edit from
@@ -51,7 +56,11 @@ shape of the risk.
       tighten the schema or have each write tool reject unknown keys itself.
 - [ ] **No dry run.** `write_unit` either writes or raises. A caller cannot ask
       "what would this change" and get the diff back without committing to it.
-      Worth having before the first editing tool, not after.
+      Worth having before the first editing tool, not after. The split above
+      points at the cheap answer rather than a flag: if an operation is a
+      function from one decoded document to another, and `storage` is the only
+      thing that touches disk, then a dry run is simply not calling it. That
+      only holds if the operations layer is written that way from the start.
 - [ ] **Rollback is documented, not offered.** Reverting is `git checkout` on
       `mprcontents/` and the `.mpr`, and this server does not run it, because
       destroying uncommitted work is not something a tool should do on its own
