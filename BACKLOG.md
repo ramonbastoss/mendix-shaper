@@ -36,7 +36,9 @@ name holds up the code that does the actual work.
 - [ ] **Resolve ids against the model, never generate them.** A reference
       should be looked up - the mapper's dump already has every unit and its
       id - and an edit whose target does not resolve should be refused before
-      anything is written, not after.
+      anything is written, not after. *The lookup now exists:
+      `engine/model.Model.names` indexes every qualified name in the app and
+      `resolve()` answers for one. What is missing is any tool that calls it.*
 
 ## Safety work that is missing
 
@@ -54,13 +56,14 @@ name holds up the code that does the actual work.
       govern it - which is the kind of failure that looks like success in the
       report. Settle this before the first editing tool, not after: either
       tighten the schema or have each write tool reject unknown keys itself.
-- [ ] **No dry run.** `write_unit` either writes or raises. A caller cannot ask
-      "what would this change" and get the diff back without committing to it.
-      Worth having before the first editing tool, not after. The split above
-      points at the cheap answer rather than a flag: if an operation is a
-      function from one decoded document to another, and `storage` is the only
-      thing that touches disk, then a dry run is simply not calling it. That
-      only holds if the operations layer is written that way from the start.
+- [x] **No dry run.** ~~`write_unit` either writes or raises.~~ Settled the way
+      the split pointed at, rather than with a flag: an operation is a function
+      from one decoded document to another, `storage` is the only thing that
+      touches disk, so the dry run is simply not calling it.
+      `engine/rename.plan()` yields `(unit_id, new_document, changes)` and
+      writes nothing; applying it is passing each entry to `write_unit`. Any
+      operation added later has to be written the same way - this stops being
+      true the moment one of them does its own I/O.
 - [ ] **Rollback is documented, not offered.** Reverting is `git checkout` on
       `mprcontents/` and the `.mpr`, and this server does not run it, because
       destroying uncommitted work is not something a tool should do on its own

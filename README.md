@@ -69,9 +69,20 @@ engine can be exercised directly, over a corpus, against what Studio Pro
 actually produced, which is the only way "deterministic" gets to mean anything
 here. Behind a stdio transport none of that is reachable.
 
-`engine/storage.py` is the bottom of it — bytes, files, hashes, no Mendix
-semantics. The layer above it, the one that knows an attribute is also an
-access-rule change, is where the next work goes.
+Inside the engine the same rule repeats, each layer knowing less than the one
+above it:
+
+| | |
+|---|---|
+| `engine/storage.py` | one unit's bytes: decode, encode, hash, the two guards. No Mendix semantics. |
+| `engine/documents.py` | one decoded unit as a tree: walk it, flatten it, rewrite its string leaves. No disk. |
+| `engine/model.py` | every unit at once: containment, which module a document lives in, and whether a qualified name points at anything. |
+| `engine/rename.py` | the first operation built on all three. |
+
+An operation is a **function from one decoded document to another**, and
+`storage` is the only thing that touches disk. That is what makes a dry run
+free — it is simply not calling the writer — and it is why `rename.plan()`
+returns what it *would* change instead of changing it.
 
 ## Safety
 
@@ -157,6 +168,15 @@ Requirements: Python 3.10+, Studio Pro installed (for `mx.exe`), Windows.
 
 ## Status
 
-Early. The storage format and the write recipe are measured — a byte-for-byte
-round-trip across 5,999 units of a 200 MB app, and a write that `mx check`
-accepts with zero errors. The tool surface on top of them is not built.
+Early, but no longer only at the byte level. The storage format and the write
+recipe are measured — a byte-for-byte round-trip across 5,999 units of a 200 MB
+app, and a write that `mx check` accepts with zero errors.
+
+On top of them there is now one real operation. `engine/rename.py` carried a
+single entity rename through an app of ~6,000 units: **439 units, 3,574 string
+leaves**, verified three ways — against the same rename done by hand in Studio
+Pro (1,283 leaves reproduced, no divergence), against an `mx check` baseline
+(0 errors, exit 0), and against every `ContentsHash` in the `.mpr`. What it
+taught is in [`docs/renaming-across-the-model.md`](docs/renaming-across-the-model.md).
+
+The tool surface on top of all of it is still not built, and still on purpose.

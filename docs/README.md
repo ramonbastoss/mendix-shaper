@@ -12,6 +12,7 @@ a rule somebody measured once and wrote down. That is what this folder is for.
 |---|---|
 | [adding-an-attribute.md](adding-an-attribute.md) | an attribute is also an access-rule change, and what happens when you skip that half |
 | [editing-alongside-studio-pro.md](editing-alongside-studio-pro.md) | getting a write made outside the IDE into an IDE that is already open |
+| [renaming-across-the-model.md](renaming-across-the-model.md) | references are qualified name strings, so a rename is a rewrite — what the IDE propagates, what it leaves, and the three traps |
 
 ## What belongs here
 
