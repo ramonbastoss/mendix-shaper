@@ -10,7 +10,9 @@ a rule somebody measured once and wrote down. That is what this folder is for.
 
 | | |
 |---|---|
+| [risk-profile.md](risk-profile.md) | **start here** — what Mendix checks and what it lets through, which mutations are exposed, and where a failure can still report success |
 | [adding-an-attribute.md](adding-an-attribute.md) | an attribute is also an access-rule change, and what happens when you skip that half |
+| [changing-an-attribute.md](changing-an-attribute.md) | renaming and retyping one: four citation forms and only one is qualified, and why `mx check` is the oracle a sweep cannot replace |
 | [editing-alongside-studio-pro.md](editing-alongside-studio-pro.md) | getting a write made outside the IDE into an IDE that is already open |
 | [renaming-across-the-model.md](renaming-across-the-model.md) | references are qualified name strings, so a rename is a rewrite — what the IDE propagates, what it leaves, and the three traps |
 
@@ -19,6 +21,11 @@ a rule somebody measured once and wrote down. That is what this folder is for.
 Findings, and only findings. What is *not built yet* belongs in `BACKLOG.md`;
 what the server *is* belongs in the top-level `README.md`. A note here answers
 "how does the model actually behave", which outlives both.
+
+`risk-profile.md` is the one exception, and it earns it by adding nothing: it
+only organises findings already measured in the other notes, by what breaks
+rather than by what you were doing. A new measurement goes in its own note
+first; the risk profile cites it.
 
 Three conventions make these notes worth trusting later:
 
