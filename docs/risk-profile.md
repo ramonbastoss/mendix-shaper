@@ -56,9 +56,18 @@ asymmetry is the whole picture:
 | Reference to a qualified **name** that does not exist | ✅ `CE1613`, exit 1 |
 | Access rules out of date (attribute added, `MemberAccess` not) | ✅ `CE0066`, exit 1, and the IDE repairs it |
 | Reference by **GUID** pointing at nothing | 🔴 **loader crash** — the app does not open |
+| Two objects in a unit sharing one `$ID` | 🔴 **`mx check` 0 errors**, then the IDE refuses to *save* that unit |
 
-The last two rows are the same mistake — a dangling reference — with opposite
+Rows three and five are the same mistake — a dangling reference — with opposite
 outcomes, decided only by how the reference is spelled.
+
+The last row is a third shape, and the nastiest: nothing is dangling, so no
+consistency check fires, and the model opens and checks clean. The integrity
+check lives in `Savior.SaveUnit` and runs only when Studio Pro writes the unit
+back, so the failure surfaces in the IDE, later, on a unit nobody is looking at.
+A shallow copy of one object with a nested child is all it takes —
+[duplicate-identities.md](duplicate-identities.md). `assert_unique_identities`
+now refuses it at write time.
 
 **`ContentsHash` is not an integrity guard.** It is
 `base64(sha256(blob))` in the `.mpr`'s single `Unit` table, and a blob edited

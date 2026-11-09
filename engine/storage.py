@@ -122,6 +122,77 @@ def assert_round_trips(blob: bytes) -> None:
         )
 
 
+def _identities(document: dict, key: str):
+    """Yield `(path, value)` for every `key` leaf holding a 16-byte identity.
+
+    A deliberate second walk rather than a call into `documents.walk`: the
+    docstring at the top of this module promises that every path to disk goes
+    through `write_unit` and that the guards live here, and that promise is
+    worth more than saving six lines. `documents` sits *above* this module.
+    """
+    def walk(node, path):
+        if isinstance(node, dict):
+            for k, v in node.items():
+                yield from walk(v, f"{path}.{k}" if path else k)
+        elif isinstance(node, list):
+            for i, v in enumerate(node):
+                yield from walk(v, f"{path}[{i}]")
+        elif (isinstance(node, bytes) and len(node) == 16
+                and path.rsplit(".", 1)[-1].split("[")[0] == key):
+            yield path, node
+
+    yield from walk(document, "")
+
+
+def assert_unique_identities(document: dict) -> None:
+    """Refuse a document in which two objects claim the same identity.
+
+    Within one unit every `$ID` is unique, and so is every `GUID`. Measured
+    across 5,740 units of a 200 MB app: zero repeats of either, in any unit
+    nobody had hand-edited.
+
+    The two keys are counted **separately and never against each other**,
+    because an object's own `$ID` and `GUID` are allowed to coincide - measured
+    on three attributes across two domain models that Studio Pro wrote itself.
+
+    This exists because of a real defect, and the shape of it is worth keeping:
+    inserting an activity into a microflow needs a new `SequenceFlow`, and the
+    cheap way to build one is to copy a neighbour and replace its `$ID`. That is
+    a *shallow* copy. A `SequenceFlow` carries a nested `Line` - the curve drawn
+    between two activities - which is its own object with its own `$ID`, so the
+    copy keeps pointing at the original's. Six flows across five units were
+    written that way.
+
+    🔴 Nothing catches it downstream. The model loads, and `mx check` reports
+    zero errors, because every reference still resolves. Mendix only notices in
+    `Savior.SaveUnit`, which runs when **Studio Pro saves** - so the failure
+    surfaces as a `System.InvalidOperationException` in the IDE, hours later,
+    on a unit the author has stopped thinking about. That is exactly the kind of
+    silent write this module is supposed to make impossible.
+
+    Safe to raise rather than repair: an identity that is also used as a pointer
+    cannot simply be reassigned, and this guard has no way to know which of the
+    claimants is the original. Deciding that belongs to the caller.
+    """
+    for key in ("$ID", "GUID"):
+        seen: dict = {}
+        for path, value in _identities(document, key):
+            seen.setdefault(value, []).append(path)
+        clashes = {v: p for v, p in seen.items() if len(p) > 1}
+        if clashes:
+            detail = "; ".join(
+                f"{value.hex()} at {', '.join(paths)}"
+                for value, paths in clashes.items()
+            )
+            raise RuntimeError(
+                f"{len(clashes)} duplicate {key} value(s) in this unit, so two "
+                f"objects claim one identity. Mendix accepts this on disk and "
+                f"rejects it when Studio Pro saves the unit. Give every copied "
+                f"object a fresh identity - including the nested ones, which a "
+                f"shallow copy shares. Nothing was written. {detail}"
+            )
+
+
 def write_unit(mpr_path: str, unit_id: str, document: dict) -> dict:
     """Write a document back as `unit_id`, and update the `.mpr` to match.
 
@@ -133,6 +204,11 @@ def write_unit(mpr_path: str, unit_id: str, document: dict) -> dict:
     Returns what changed, for a caller that wants to report it. Nothing here
     validates the *model*: that a document is well-formed BSON says nothing
     about whether its references resolve. Run `tool_validate_model` after.
+
+    What it does check is the one invariant that belongs to the document rather
+    than to the model - that no two objects claim one identity. See
+    `assert_unique_identities`: that one is here and not in a caller because
+    `mx check` does not catch it and Studio Pro only reports it on save.
     """
     assert_writable(mpr_path)
 
@@ -142,6 +218,7 @@ def write_unit(mpr_path: str, unit_id: str, document: dict) -> dict:
 
     before = read_blob(path)
     assert_round_trips(before)
+    assert_unique_identities(document)
 
     after = encode(document)
     if after == before:
