@@ -16,6 +16,7 @@ a rule somebody measured once and wrote down. That is what this folder is for.
 | [changing-an-attribute.md](changing-an-attribute.md) | renaming and retyping one: four citation forms and only one is qualified, and why `mx check` is the oracle a sweep cannot replace |
 | [editing-alongside-studio-pro.md](editing-alongside-studio-pro.md) | getting a write made outside the IDE into an IDE that is already open |
 | [renaming-across-the-model.md](renaming-across-the-model.md) | references are qualified name strings, so a rename is a rewrite — what the IDE propagates, what it leaves, and the three traps |
+| [moving-an-association-end.md](moving-an-association-end.md) | re-parenting is one leaf and a long tail: every crossing path gains a hop, a data source takes more than one, and reverse navigation stops being an edit |
 
 ## What belongs here
 

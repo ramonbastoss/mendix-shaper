@@ -74,10 +74,11 @@ above it:
 
 | | |
 |---|---|
-| `engine/storage.py` | one unit's bytes: decode, encode, hash, the two guards. No Mendix semantics. |
+| `engine/storage.py` | one unit's bytes: decode, encode, hash, the guards. No Mendix semantics. |
 | `engine/documents.py` | one decoded unit as a tree: walk it, flatten it, rewrite its string leaves. No disk. |
 | `engine/model.py` | every unit at once: containment, which module a document lives in, and whether a qualified name points at anything. |
 | `engine/rename.py` | the first operation built on all three. |
+| `engine/associations.py` | moving one end of an association, with the storage identity and the access rules that travel with it. |
 
 An operation is a **function from one decoded document to another**, and
 `storage` is the only thing that touches disk. That is what makes a dry run

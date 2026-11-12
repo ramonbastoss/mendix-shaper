@@ -193,6 +193,88 @@ def assert_unique_identities(document: dict) -> None:
             )
 
 
+# The leaves that decide *where and how* an association's data is stored:
+# which table the column lives on, which table it points at, and whether the
+# association is a column or a join table. A change to any of them relocates
+# the storage. `Name` is deliberately absent - renaming an association is an
+# update in the catalogue, not a relocation.
+ASSOCIATION_STORAGE_KEYS = ("ParentPointer", "Child", "StorageFormat", "Type")
+
+# Where a domain model keeps its associations.
+ASSOCIATION_BUCKETS = ("Associations", "CrossAssociations")
+
+
+def associations_by_id(document: dict) -> dict:
+    """`{$ID: association}` for every association in a domain model.
+
+    Keyed on `$ID` because that is what survives an edit: the object is the
+    same object, which is exactly the question the guard below asks.
+    """
+    found = {}
+    for bucket in ASSOCIATION_BUCKETS:
+        for item in document.get(bucket, []):
+            if isinstance(item, dict) and "$ID" in item:
+                found[item["$ID"]] = item
+    return found
+
+
+def assert_storage_identity(before: dict, after: dict) -> None:
+    """Refuse to move an association's storage while keeping its `GUID`.
+
+    An association's `GUID` is not decoration: it is the **primary key of its
+    row** in the database's own catalogue, `MendixSystem$Association.ID`.
+    Measured on an Oracle-backed app - the model carried
+    `GUID = a1b2c3d4-…` and the catalogue row for it carried that same value
+    in `ID`.
+
+    When an association changes the table its column lives on, the runtime
+    treats it as a new storage structure and emits `INSERT`, not `UPDATE`. Keep
+    the `GUID` and that insert lands on the row that is still there:
+
+        INSERT INTO "MENDIXSYSTEM$ASSOCIATION" ("ID", ...)
+        ORA-00001: unique constraint violated
+
+    🔴 Nothing upstream catches this. `mx check` reports zero errors, Studio Pro
+    opens the model happily, the build succeeds - and the app dies at database
+    synchronisation, after the DDL that precedes the insert has already run. On
+    Oracle and MySQL that DDL is committed implicitly while the catalogue rows
+    roll back, so the failure leaves the schema and the catalogue disagreeing in
+    *both* directions. The same mistake on PostgreSQL leaves no trace at all,
+    which makes it the kind of bug that gets written off as flaky.
+
+    That is the same shape as `assert_unique_identities`: a write this encoder
+    will happily produce, that no later check will question, and whose damage
+    surfaces somewhere else entirely. Hence a guard rather than a note.
+
+    `engine/associations.move_end` does the right thing by construction; this
+    exists for every other path to disk, including a one-off script.
+    """
+    old, new = associations_by_id(before), associations_by_id(after)
+    offenders = []
+    for object_id, after_assoc in new.items():
+        before_assoc = old.get(object_id)
+        if before_assoc is None:
+            continue
+        moved = [k for k in ASSOCIATION_STORAGE_KEYS
+                 if before_assoc.get(k) != after_assoc.get(k)]
+        if moved and before_assoc.get("GUID") == after_assoc.get("GUID"):
+            offenders.append((after_assoc.get("Name"), moved))
+
+    if offenders:
+        detail = "; ".join(f"{name or '<unnamed>'} ({', '.join(keys)})"
+                           for name, keys in offenders)
+        raise RuntimeError(
+            f"{len(offenders)} association(s) changed where their data is "
+            f"stored but kept the same GUID. That GUID is the primary key of "
+            f"the association's row in MendixSystem$Association, and a "
+            f"relocation is written to the catalogue as an INSERT - so the "
+            f"database synchronisation will fail on a duplicate key, long "
+            f"after mx check has passed. Give each one a fresh GUID "
+            f"(uuid.uuid4().bytes_le), or use engine.associations.move_end, "
+            f"which does it for you. Nothing was written. {detail}"
+        )
+
+
 def write_unit(mpr_path: str, unit_id: str, document: dict) -> dict:
     """Write a document back as `unit_id`, and update the `.mpr` to match.
 
@@ -205,10 +287,13 @@ def write_unit(mpr_path: str, unit_id: str, document: dict) -> dict:
     validates the *model*: that a document is well-formed BSON says nothing
     about whether its references resolve. Run `tool_validate_model` after.
 
-    What it does check is the one invariant that belongs to the document rather
-    than to the model - that no two objects claim one identity. See
-    `assert_unique_identities`: that one is here and not in a caller because
-    `mx check` does not catch it and Studio Pro only reports it on save.
+    What it does check are the invariants that belong to the document rather
+    than to the model, and they share a reason for being here: `mx check` lets
+    all of them through, so a caller that trusted it would write damage that
+    surfaces much later and somewhere else. No two objects may claim one
+    identity (`assert_unique_identities` - Studio Pro only says so on save),
+    and an association may not relocate its storage while keeping its `GUID`
+    (`assert_storage_identity` - the database only says so at sync).
     """
     assert_writable(mpr_path)
 
@@ -219,6 +304,7 @@ def write_unit(mpr_path: str, unit_id: str, document: dict) -> dict:
     before = read_blob(path)
     assert_round_trips(before)
     assert_unique_identities(document)
+    assert_storage_identity(decode(before), document)
 
     after = encode(document)
     if after == before:

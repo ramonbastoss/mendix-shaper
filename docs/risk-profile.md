@@ -57,6 +57,7 @@ asymmetry is the whole picture:
 | Access rules out of date (attribute added, `MemberAccess` not) | ✅ `CE0066`, exit 1, and the IDE repairs it |
 | Reference by **GUID** pointing at nothing | 🔴 **loader crash** — the app does not open |
 | Two objects in a unit sharing one `$ID` | 🔴 **`mx check` 0 errors**, then the IDE refuses to *save* that unit |
+| Association's storage moved, `GUID` kept | 🔴 **`mx check` 0 errors**, the build succeeds, then the *database sync* dies on a duplicate key |
 
 Rows three and five are the same mistake — a dangling reference — with opposite
 outcomes, decided only by how the reference is spelled.
@@ -68,6 +69,21 @@ back, so the failure surfaces in the IDE, later, on a unit nobody is looking at.
 A shallow copy of one object with a nested child is all it takes —
 [duplicate-identities.md](duplicate-identities.md). `assert_unique_identities`
 now refuses it at write time.
+
+The row after it is a fourth shape, and it reaches further than the IDE. An
+association's `GUID` is the **primary key of its row in the database
+catalogue**, so moving the association to another entity while keeping that
+`GUID` makes the model build cleanly and the *database synchronisation* fail on
+a duplicate key — on Oracle, after the preceding DDL has already committed
+itself. Nothing between the edit and the deploy has an opinion.
+[moving-an-association-end.md](moving-an-association-end.md).
+`assert_storage_identity` now refuses it at write time, and
+`engine/associations.move_end` makes it unreachable by construction.
+
+🔑 **Both of these were found the same way: by doing the damage.** The guard
+list is a list of mistakes this project has made, which is also why neither was
+predictable from the format alone — the oracle that catches them lives outside
+`mx check`, in the IDE's save path and in the database's own catalogue.
 
 **`ContentsHash` is not an integrity guard.** It is
 `base64(sha256(blob))` in the `.mpr`'s single `Unit` table, and a blob edited
