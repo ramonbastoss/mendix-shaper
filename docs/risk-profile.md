@@ -57,6 +57,7 @@ asymmetry is the whole picture:
 | Access rules out of date (attribute added, `MemberAccess` not) | ✅ `CE0066`, exit 1, and the IDE repairs it |
 | Reference by **GUID** pointing at nothing | 🔴 **loader crash** — the app does not open |
 | Two objects in a unit sharing one `$ID` | 🔴 **`mx check` 0 errors**, then the IDE refuses to *save* that unit |
+| Root `$ID` not the id the unit is stored as | 🔴 **`mx check` 0 errors**, the IDE *repairs it silently on save* — and that unit's **diff** throws from then on, see [unit-identity.md](unit-identity.md) |
 | Association's storage moved, `GUID` kept | 🔴 **`mx check` 0 errors**, the build succeeds, then the *database sync* dies on a duplicate key |
 
 Rows three and five are the same mistake — a dangling reference — with opposite
@@ -170,6 +171,20 @@ content. But it is the honest shape of the danger here, and it generalises:
 **a fact about the format has to be measured against variety of unit types, not
 against the cases on the desk.** A small homogeneous sample confirms the wrong
 hypothesis and feels like evidence.
+
+The second one did reach a commit. `create_unit` did not exist, because
+creating a unit was judged to be session work rather than a shaper operation —
+`write_unit` only updates a row that already exists. So ten sessions wrote
+their own, fifteen scripts in total, each with its own `INSERT INTO Unit` and
+its own idea of which invariants mattered. Five units landed with a root `$ID`
+that was not the id they were stored as, and the damage showed up weeks later
+as a diff that would not open ([unit-identity.md](unit-identity.md)).
+
+The guards in `storage.py` are only worth what their coverage is, and coverage
+is measured over *every path to disk* — including the paths that do not exist
+yet. 🔑 **A primitive that every caller reimplements is not out of scope. It is
+missing**, and each reimplementation is a chance to omit a guard nobody will
+notice is absent.
 
 ## The question to ask before registering a tool
 

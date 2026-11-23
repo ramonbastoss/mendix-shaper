@@ -13,10 +13,12 @@ a rule somebody measured once and wrote down. That is what this folder is for.
 | [risk-profile.md](risk-profile.md) | **start here** — what Mendix checks and what it lets through, which mutations are exposed, and where a failure can still report success |
 | [adding-an-attribute.md](adding-an-attribute.md) | an attribute is also an access-rule change, and what happens when you skip that half |
 | [duplicate-identities.md](duplicate-identities.md) | `$ID` and `GUID` are unique within a unit — how a shallow copy breaks that, and why only the IDE's *save* ever says so |
+| [unit-identity.md](unit-identity.md) | a unit's file name *is* its root `$ID` — nothing checks it, the IDE repairs it silently, and the unit's diff is what breaks |
 | [changing-an-attribute.md](changing-an-attribute.md) | renaming and retyping one: four citation forms and only one is qualified, and why `mx check` is the oracle a sweep cannot replace |
 | [editing-alongside-studio-pro.md](editing-alongside-studio-pro.md) | getting a write made outside the IDE into an IDE that is already open |
 | [renaming-across-the-model.md](renaming-across-the-model.md) | references are qualified name strings, so a rename is a rewrite — what the IDE propagates, what it leaves, and the three traps |
 | [moving-an-association-end.md](moving-an-association-end.md) | re-parenting is one leaf and a long tail: every crossing path gains a hop, a data source takes more than one, and reverse navigation stops being an edit |
+| [replacing-an-association-with-a-path.md](replacing-an-association-with-a-path.md) | deleting one association in favour of a longer route: XPath will not walk a long path from a variable, and the replacing member carries its rule's default rather than the rights the old one was granted |
 
 ## What belongs here
 

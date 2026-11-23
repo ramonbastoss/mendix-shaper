@@ -2,8 +2,16 @@
 
 The bottom of the engine: bytes and files, and no Mendix semantics at all.
 Nothing here knows what an entity is. Everything that edits a Mendix model
-goes through `write_unit` below, so the guards live in one place instead of in
-every caller.
+goes through `write_unit` or `create_unit` below, so the guards live in one
+place instead of in every caller.
+
+That promise was false for a while, and it cost something. `create_unit` did
+not exist, so every session that needed a new document wrote its own - fifteen
+scripts across ten sessions, each with its own `INSERT INTO Unit` and its own
+idea of which invariants were worth checking. Five units reached a commit with
+a root `$ID` that did not match the name of the file holding them, because the
+hand-rolled version took the id and the document as separate arguments and
+nothing tied them together. See `assert_root_identity`.
 
 **`engine/` never imports MCP.** The dependency runs one way - `tools/` calls
 in here, nothing in here knows a server exists - because that is what makes
@@ -73,8 +81,17 @@ def content_hash(blob: bytes) -> str:
     return base64.b64encode(hashlib.sha256(blob).digest()).decode("ascii")
 
 
-def _unit_key(unit_id: str) -> bytes:
-    """A unit id as the `.mpr` stores it: the UUID in little-endian bytes."""
+def _unit_key(unit_id) -> bytes:
+    """A unit id as the `.mpr` stores it: the UUID in little-endian bytes.
+
+    Takes the id in either of the two forms it circulates in - the string a
+    caller reads off a path or a report, and the raw 16 bytes a decoded
+    document carries. They are the same id in different clothes, and making
+    the caller remember which one it is holding buys nothing but a `ValueError`
+    deep inside a write.
+    """
+    if isinstance(unit_id, bytes) and len(unit_id) == 16:
+        return unit_id
     return uuid.UUID(str(unit_id)).bytes_le
 
 
@@ -193,6 +210,57 @@ def assert_unique_identities(document: dict) -> None:
             )
 
 
+def assert_root_identity(unit_id: str, document: dict) -> None:
+    """Refuse a document whose root `$ID` is not the id it is stored as.
+
+    `mprcontents/<ab>/<cd>/<uuid>.mxunit` is not a naming convention. That
+    `<uuid>` *is* the root object's `$ID`, and the `.mpr` row keys on the same
+    value. Measured across the 5,771 units of a 200 MB app: 5,766 agree, and
+    the five that do not were all written by the same hand-rolled creation
+    helper, which took the id and the document as separate arguments.
+
+    Nothing downstream asks. The `.mpr` indexes by the file name, so Studio Pro
+    loads the unit, `mx check` reports zero errors, and the runtime runs it. No
+    pointer dangles either: a microflow reached from a domain model event
+    handler is referenced by **qualified name**, not by `$ID`.
+
+    It surfaces the first time Studio Pro *saves* the unit. The save normalises
+    the root `$ID` to the file name, the committed version keeps the old one,
+    and opening that row in the Changes tab throws:
+
+        System.InvalidOperationException: baseObjects does not contain the same root
+           at ...DifferenceComputer.ComputeDifferences()
+           at ...DifferencesRenderer.GetModificationRows()
+
+    The diff loads the base blob by path and compares roots. So the unit works
+    and its history is unreviewable - the failure lands on whoever opens the
+    Changes tab days later, not on whoever wrote it. Same shape as the two
+    guards below: a write this encoder produces happily, that `mx check` waves
+    through, whose damage appears somewhere else entirely.
+
+    To repair a unit already on disk, set `document["$ID"]` to the id it is
+    stored as and write it. That is safe when nothing points at the stale value
+    - the normal case for a document, and still worth checking rather than
+    assuming, because a broken pointer by GUID does not produce a check error,
+    it stops the model from loading at all.
+    """
+    expected = _unit_key(unit_id)
+    actual = document.get("$ID")
+    if actual == expected:
+        return
+    found = (str(uuid.UUID(bytes_le=actual))
+             if isinstance(actual, bytes) and len(actual) == 16
+             else repr(actual))
+    raise RuntimeError(
+        f"This document's root $ID is {found}, but it is being stored as "
+        f"{unit_id}. The file name and the .mpr row key are the root $ID, not "
+        f"a label for it. Mendix accepts the mismatch and Studio Pro repairs it "
+        f"silently on the next save, which then breaks the diff of that unit "
+        f"against its committed version. Set document['$ID'] to {unit_id}. "
+        f"Nothing was written."
+    )
+
+
 # The leaves that decide *where and how* an association's data is stored:
 # which table the column lives on, which table it points at, and whether the
 # association is a column or a join table. A change to any of them relocates
@@ -290,10 +358,13 @@ def write_unit(mpr_path: str, unit_id: str, document: dict) -> dict:
     What it does check are the invariants that belong to the document rather
     than to the model, and they share a reason for being here: `mx check` lets
     all of them through, so a caller that trusted it would write damage that
-    surfaces much later and somewhere else. No two objects may claim one
-    identity (`assert_unique_identities` - Studio Pro only says so on save),
-    and an association may not relocate its storage while keeping its `GUID`
-    (`assert_storage_identity` - the database only says so at sync).
+    surfaces much later and somewhere else. The root `$ID` must be the id the
+    unit is stored as (`assert_root_identity` - Studio Pro only says so by
+    quietly repairing it, and breaking the unit's diff in the process), no two
+    objects may claim one identity (`assert_unique_identities` - Studio Pro
+    only says so on save), and an association may not relocate its storage
+    while keeping its `GUID` (`assert_storage_identity` - the database only
+    says so at sync).
     """
     assert_writable(mpr_path)
 
@@ -303,6 +374,7 @@ def write_unit(mpr_path: str, unit_id: str, document: dict) -> dict:
 
     before = read_blob(path)
     assert_round_trips(before)
+    assert_root_identity(unit_id, document)
     assert_unique_identities(document)
     assert_storage_identity(decode(before), document)
 
@@ -337,5 +409,128 @@ def write_unit(mpr_path: str, unit_id: str, document: dict) -> dict:
         "path": path,
         "bytes_before": len(before),
         "bytes_after": len(after),
+        "contents_hash": new_hash,
+    }
+
+
+# What Studio Pro puts in the two columns that are not identity, content or
+# containment. Measured across 5,772 rows of a 200 MB app: both uniform, no
+# second value anywhere. They are merge bookkeeping, and a unit that has never
+# been merged carries the empty form of each.
+NO_TREE_CONFLICT = 0
+NO_CONTENTS_CONFLICTS = ""
+
+
+def create_unit(mpr_path: str, document: dict, container_id: str,
+                containment_name: str = "Documents") -> dict:
+    """Add a new unit to the model: the blob on disk and its row in the `.mpr`.
+
+    Creating is not writing, which is why `write_unit` refuses it: that one
+    updates a row that exists, and a new unit needs the row inserted and a
+    container to insert it under. Containment lives only in the `.mpr` - a blob
+    does not record who holds it - so the document alone is not a unit.
+
+    🔑 **There is no `unit_id` argument, and that is the whole point.** The id
+    is derived from `document["$ID"]`, so the file name, the row key and the
+    root object cannot be given different values. Every hand-rolled version of
+    this function took the two separately, and that is exactly how five units
+    reached a commit with a root `$ID` that did not match their file name -
+    the document came from a clone helper that regenerated every identity
+    including the root, while the path came from a constant typed further up
+    the script. See `assert_root_identity` for what that costs and when.
+
+    `container_id` is the folder or module the document appears under, and
+    `containment_name` is which collection of the container it joins.
+    Measured distribution: `Documents` for a document in a module or folder
+    (4,408 rows), `Folders` for a folder (1,070), and the rest are the one-per-
+    module fixtures - `Modules`, `ModuleSettings`, `ModuleSecurity`,
+    `DomainModel`. Every row in the app has a container; none is NULL.
+
+    Refuses rather than overwrites when either half already exists, because the
+    two failures it would otherwise produce are both silent. A blob written
+    over a live unit replaces a document nobody asked to touch; a row inserted
+    for an existing id cannot happen at all - `UnitID` is the primary key - so
+    the blob would land and the insert would abort, leaving the model holding
+    the new bytes under the old identity.
+
+    On failure the order is blob first, row second, same as `write_unit` and
+    for the same reason: an interrupted create leaves a blob with no row, which
+    Mendix does not read and git shows as an untracked file, rather than a row
+    pointing at a file that is not there, which stops the model from loading.
+    """
+    assert_writable(mpr_path)
+
+    root = document.get("$ID")
+    if not isinstance(root, bytes) or len(root) != 16:
+        raise RuntimeError(
+            f"A new unit needs a root $ID of 16 bytes to be stored as; this "
+            f"document has {root!r}. Give it one with uuid.uuid4().bytes_le. "
+            f"Nothing was written."
+        )
+    unit_id = str(uuid.UUID(bytes_le=root))
+    container_id = str(uuid.UUID(bytes_le=container_id)
+                       if isinstance(container_id, bytes) else container_id)
+
+    # No `assert_root_identity` here: deriving `unit_id` from the root is what
+    # makes it hold, and an assertion that cannot fail is documentation
+    # pretending to be a check. The guard is for `write_unit`, where the id
+    # does arrive separately because the unit already has one.
+    assert_unique_identities(document)
+
+    blob = encode(document)
+    if decode(blob) != document:
+        raise RuntimeError(
+            "This document does not round-trip through the encoder, so what "
+            "would land on disk is not what was built. Nothing was written."
+        )
+
+    path = unit_path(mpr_path, unit_id)
+    if os.path.exists(path):
+        raise FileExistsError(
+            f"Unit {unit_id} already exists at {path}. Creating it would "
+            f"overwrite a live document; edit it with write_unit instead. "
+            f"Nothing was written."
+        )
+
+    connection = sqlite3.connect(mpr_path)
+    try:
+        if connection.execute("SELECT 1 FROM Unit WHERE UnitID = ?",
+                              (_unit_key(unit_id),)).fetchone():
+            raise RuntimeError(
+                f"The .mpr already has a row for {unit_id}, but no blob at "
+                f"{path}. The model is inconsistent and this is not the place "
+                f"to repair it. Nothing was written."
+            )
+        if not connection.execute("SELECT 1 FROM Unit WHERE UnitID = ?",
+                                  (_unit_key(container_id),)).fetchone():
+            raise RuntimeError(
+                f"Container {container_id} has no row in the .mpr, so the new "
+                f"unit would have nothing holding it and would not appear in "
+                f"Studio Pro. Nothing was written."
+            )
+
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(blob)
+
+        new_hash = content_hash(blob)
+        connection.execute(
+            "INSERT INTO Unit (UnitID, ContainerID, ContainmentName, "
+            "TreeConflict, ContentsHash, ContentsConflicts) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (_unit_key(unit_id), _unit_key(container_id), containment_name,
+             NO_TREE_CONFLICT, new_hash, NO_CONTENTS_CONFLICTS),
+        )
+        connection.commit()
+    finally:
+        connection.close()
+
+    return {
+        "unit_id": unit_id,
+        "created": True,
+        "path": path,
+        "container_id": container_id,
+        "containment_name": containment_name,
+        "bytes": len(blob),
         "contents_hash": new_hash,
     }
