@@ -74,6 +74,36 @@ name holds up the code that does the actual work.
       server's write from the user's own work, which quietly removes the
       rollback story. A check against `git status` is cheap.
 
+## Deliberately not built: answering Studio Pro's dialogs
+
+`tool_close_app` and `tool_open_app` stop at a modal and report its text. UI
+Automation could click the button instead — `read_dialog` already walks the
+dialog's tree, and invoking a button from there is a couple of lines. It is
+left out, and the reasoning should be read before anyone adds it.
+
+Both modals have an answer that cannot be undone. **Discard** throws away a
+model that exists only in Studio Pro's memory, with nothing on disk to restore
+from. **Open anyway** puts two IDEs on one model, which Mendix states is not
+supported. Neither is a case where being wrong costs a retry.
+
+A capability that exists is a capability something will reach for, and the
+caller here is a language model under instruction to finish a task. The
+argument that it would only click when told applies equally well to every tool
+that has ever been called with the wrong argument. Not offering the option is
+a stronger guarantee than documenting when not to use it.
+
+- [ ] **Decide whether an explicit, user-confirmed answer is worth adding.** If
+      it ever is, the shape that keeps the guarantee is one that cannot be
+      invented by the caller: the exact text of the dialog and the exact button
+      label, both echoed back from a previous blocked reply, refused if the
+      dialog on screen has changed since. Until then the user clicks.
+- [ ] **A dialog during a load is reported only at the timeout.** The loader's
+      own progress window is owned and carries a Cancel button, so an owned
+      window is not evidence of a question (see
+      `docs/controlling-studio-pro.md`), and nothing cheaper than the timeout
+      currently separates the two. A real question asked while opening is
+      therefore surfaced late rather than immediately.
+
 ## Smaller things
 
 - [ ] **`tool_validate_model` cannot be interrupted.** `mx check` runs for

@@ -120,18 +120,31 @@ Four things follow from that:
 **Close Studio Pro before writing.** It holds the `.mpr` open and keeps the
 model in memory; saving from it afterwards would overwrite the edit. There is a
 best-effort guard — the writer tries to take SQLite's write lock first and
-refuses if it cannot — but it is a guard, not a guarantee.
+refuses if it cannot — but it is a guard, not a guarantee: an IDE that merely
+has a model open takes no lock at all, so the guard never sees the case that
+loses work. `tool_close_app` makes that step something a caller can take, and
+`tool_open_app` hands the app back afterwards.
+
+Neither of them answers a dialog. When Studio Pro asks whether to save, or
+warns that a model is already open, the tool reports what is on screen and
+stops — there is no force flag. Both questions have an answer that cannot be
+undone, so they go back to the user. See
+[`docs/controlling-studio-pro.md`](docs/controlling-studio-pro.md).
 
 ## What it does today
 
 | tool | |
 |---|---|
 | `tool_list_projects` | the working copies configured on this machine |
+| `tool_close_app` | close the Studio Pro instance holding a model, or report the dialog stopping it |
+| `tool_open_app` | open a model and wait for it to load, refusing if something already has it open |
 | `tool_validate_model` | loader canary + consistency check, with the delta against a saved baseline |
 
 **No editing tool is registered yet**, and that is deliberate rather than
 unfinished: the write primitive is proven, the shape of the editing surface is
-not. Deciding what gets exposed — and how narrow each tool's reach should be —
+not. The four above do not edit a model — they report on one, check one, or
+move the IDE out of the way of one — which is why they can exist while the
+question stays open. Deciding what gets exposed — and how narrow each tool's reach should be —
 is the open question in `BACKLOG.md`. It is a question about `tools/` only,
 which is why the engine does not have to wait for it.
 
