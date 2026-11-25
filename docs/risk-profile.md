@@ -52,7 +52,7 @@ asymmetry is the whole picture:
 | Mutation | What Mendix does |
 |---|---|
 | Value edited, hash updated | accepted — `mx check` 0 errors |
-| Blob edited, `ContentsHash` left stale | 🔴 **not noticed** — the model loads normally |
+| Blob edited, `ContentsHash` left stale | 🔴 **loader and `mx check` silent**, then the IDE's Changes pane does not list the edit — see [stale-contents-hash.md](stale-contents-hash.md) |
 | Reference to a qualified **name** that does not exist | ✅ `CE1613`, exit 1 |
 | Access rules out of date (attribute added, `MemberAccess` not) | ✅ `CE0066`, exit 1, and the IDE repairs it |
 | Reference by **GUID** pointing at nothing | 🔴 **loader crash** — the app does not open |
@@ -90,11 +90,12 @@ predictable from the format alone — the oracle that catches them lives outside
 `base64(sha256(blob))` in the `.mpr`'s single `Unit` table, and a blob edited
 without updating it loaded with no complaint. It exists for conflict and merge
 detection, not for detecting modification. So the hash update is this server's
-obligation and nothing downstream will report that it was skipped. *Hypothesis,
-not measured: the cost of a stale hash is paid later, in a merge that compares
-against the wrong fingerprint. A latent failure with a delayed symptom is the
-worst shape available, which is reason enough to treat the hash write as part
-of the write and not as a step after it.*
+obligation and nothing in `mx` will report that it was skipped. The cost was
+guessed to be paid later, in a merge; it turned out to be paid at once, in the
+IDE: the unit does not appear in the Changes pane, so the edit is on disk and
+invisible to whoever reviews it there
+([stale-contents-hash.md](stale-contents-hash.md)). `storage.stale_hashes`
+now finds it, and `tool_validate_model` runs it on every call.
 
 **A dangling GUID takes the loader down, and says almost nothing:**
 

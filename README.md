@@ -103,8 +103,13 @@ sweep.
 Four things follow from that:
 
 1. **`ContentsHash` is not an integrity check.** A blob edited without updating
-   its hash loads normally; the field exists for conflict detection, not for
-   catching a bad write. Nothing here may rely on Mendix noticing a mistake.
+   its hash loads normally and passes `mx check`; the field exists for
+   conflict detection, not for catching a bad write. Nothing here may rely on
+   Mendix noticing a mistake. Studio Pro *does* act on it, silently: the edit
+   is left out of its Changes pane. So never write a blob by hand —
+   `storage.write_unit` writes the hash in the same step — and
+   `tool_validate_model` reports any unit whose hash is stale
+   ([docs/stale-contents-hash.md](docs/stale-contents-hash.md)).
 2. **Round-trip before write.** Before a unit is modified, it is re-encoded
    from its own untouched decode and compared with the bytes on disk. If they
    differ, the write is refused: an encoder that is not faithful for this unit

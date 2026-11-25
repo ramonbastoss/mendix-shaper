@@ -295,6 +295,34 @@ case("write_unit refuses a renamed Child when not told it is a rename",
 case("write_unit accepts it when told", lambda: rename_through_write(
     {"OtherModule.MyTarget": "OtherModule.MyRenamedTarget"}), False)
 
+# -- stale_hashes ---------------------------------------------------------------
+# The fixture's container row has no blob, so it is always reported as
+# `missing_blob`; these cases look only at the unit they wrote.
+
+def _stale_ids():
+    return {s["unit_id"] for s in storage.stale_hashes(MPR)
+            if not s.get("missing_blob")}
+
+
+def hand_written_blob_is_reported():
+    """The mistake this exists for: bson.encode + open('wb'), hash untouched."""
+    fresh_model()
+    doc = document()
+    result = storage.create_unit(MPR, doc, CONTAINER)
+    assert result["unit_id"] not in _stale_ids(), "fresh unit reported stale"
+
+    doc["Documentation"] = "edited by hand"
+    with open(result["path"], "wb") as f:
+        f.write(storage.encode(doc))
+    assert result["unit_id"] in _stale_ids(), "hand-written blob not reported"
+
+    storage.write_unit(MPR, result["unit_id"], doc | {"Documentation": "x"})
+    assert result["unit_id"] not in _stale_ids(), "write_unit left it stale"
+
+
+case("stale_hashes reports a blob written around write_unit, and write_unit "
+     "clears it", hand_written_blob_is_reported, False)
+
 
 if WORKSPACE:
     shutil.rmtree(WORKSPACE, ignore_errors=True)

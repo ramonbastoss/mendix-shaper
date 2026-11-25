@@ -20,11 +20,13 @@ corpus and compared against what Studio Pro produced; a tool behind a stdio
 transport cannot.
 
 A unit is a BSON document on disk and a row in the `.mpr`, and the two have to
-agree. The row carries `ContentsHash` = `base64(sha256(blob))`. Mendix will
-*not* complain if they disagree - a blob edited without its hash loads
-normally, because that field exists for conflict detection during a merge and
-not to catch a bad write. So the hash update is this module's responsibility
-and nobody else's.
+agree. The row carries `ContentsHash` = `base64(sha256(blob))`. Neither the
+loader nor `mx check` complains if they disagree - a blob edited without its
+hash loads normally and checks clean. Studio Pro does notice, just not out
+loud: the unit drops out of its Changes pane, so the edit is on disk, in
+`git status`, and invisible in the IDE (docs/stale-contents-hash.md). So the
+hash update is this module's responsibility and nobody else's, and
+`stale_hashes` is how a caller finds out it was skipped.
 
 `bson` comes from **pymongo**. The PyPI package named `bson` is an unrelated
 project and will not work here - see requirements.txt.
@@ -79,6 +81,41 @@ def encode(document: dict) -> bytes:
 def content_hash(blob: bytes) -> str:
     """The `.mpr`'s `ContentsHash` for a blob: base64 of its sha256."""
     return base64.b64encode(hashlib.sha256(blob).digest()).decode("ascii")
+
+
+def stale_hashes(mpr_path: str) -> list[dict]:
+    """Every unit whose `ContentsHash` does not describe the blob on disk.
+
+    The loader and `mx check` both accept a stale hash, so this is the only
+    thing that reports one. It is what a blob edited outside `write_unit`
+    looks like - a hand-rolled `bson.encode` and `open(path, "wb")` - and
+    Studio Pro does not treat it as harmless: it leaves the unit out of the
+    Changes pane, so the edit is invisible in the IDE while `git status`
+    lists it. See docs/stale-contents-hash.md.
+
+    Reads only. A row whose blob is missing is reported too, with
+    `missing_blob`; the fix for both is to go through `write_unit`, or to
+    restore the unit with git.
+    """
+    connection = sqlite3.connect(f"file:{mpr_path}?mode=ro", uri=True)
+    try:
+        rows = connection.execute(
+            "SELECT UnitID, ContentsHash FROM Unit").fetchall()
+    finally:
+        connection.close()
+
+    stale = []
+    for unit_key, stored in rows:
+        unit_id = str(uuid.UUID(bytes_le=unit_key))
+        path = unit_path(mpr_path, unit_id)
+        if not os.path.exists(path):
+            stale.append({"unit_id": unit_id, "missing_blob": True})
+            continue
+        actual = content_hash(read_blob(path))
+        if actual != stored:
+            stale.append({"unit_id": unit_id, "stored": stored,
+                          "actual": actual})
+    return stale
 
 
 def _unit_key(unit_id) -> bytes:

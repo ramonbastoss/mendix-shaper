@@ -12,13 +12,21 @@ So the loader runs first. `mx dump-mpr` reads every unit and resolves its
 references, which makes its exit code a usable canary: if the model cannot be
 opened, nothing else is worth measuring. Its output is 200 MB of JSON nobody
 wants here, so it goes to the null device - the exit code is the signal.
+
+A third pass needs neither: every `ContentsHash` in the `.mpr` against the
+blob it is supposed to describe. Both `mx` passes accept a stale hash, and
+Studio Pro then hides that unit's edit from its Changes pane - the usual cause
+being a blob written by hand instead of through `storage.write_unit`. It is a
+second or two on a seven-thousand-unit app, so it always runs.
 """
 
 import json
 import os
+import sqlite3
 from collections import Counter
 from datetime import datetime
 
+from engine import storage
 from tools._utils import (
     resolve_project,
     require_mpr,
@@ -82,6 +90,25 @@ def _run_check(proj: dict, key: str) -> dict:
     }
 
 
+def _check_hashes(proj: dict) -> dict:
+    stale = storage.stale_hashes(proj["mpr_path"])
+    if not stale:
+        return {"stale_hashes": 0}
+    return {
+        "stale_hashes": len(stale),
+        "stale_units": stale[:20],
+        "hash_hint": (
+            "These units' blobs do not match the ContentsHash the .mpr holds "
+            "for them. The loader and mx check accept that, but Studio Pro "
+            "leaves the unit out of its Changes pane, so the edit is invisible "
+            "in the IDE. It means a blob was written without going through "
+            "engine.storage.write_unit. Rewrite the unit through write_unit, "
+            "or set ContentsHash = storage.content_hash(blob) for that row, "
+            "with Studio Pro closed - or restore the unit with git."
+        ),
+    }
+
+
 def _baseline_path(key: str) -> str:
     return temp_file("baselines", f"{key}.json")
 
@@ -94,18 +121,28 @@ def validate_model(project: str = None, save_as_baseline: bool = False) -> dict:
     except (ValueError, FileNotFoundError) as e:
         return {"success": False, "error": str(e)}
 
+    # Cheap and independent of `mx`, so it runs first and is reported whatever
+    # the other two passes say: a stale hash is often the same mistake as the
+    # bad write that takes the loader down.
+    try:
+        hashes = _check_hashes(proj)
+    except (OSError, sqlite3.Error) as e:
+        hashes = {"stale_hashes": None, "hash_error": str(e)}
+
     loader = _run_loader(proj)
     if not loader["loads"]:
         # No point measuring consistency on a model that will not open, and
         # `check` would fail in a way that reads like a different problem.
-        return {"success": True, "project": key, "loads": False, **loader}
+        return {"success": True, "project": key, "loads": False, **loader,
+                **hashes}
 
     try:
         check = _run_check(proj, key)
     except (RuntimeError, OSError, json.JSONDecodeError) as e:
-        return {"success": False, "project": key, "loads": True, "error": str(e)}
+        return {"success": False, "project": key, "loads": True, "error": str(e),
+                **hashes}
 
-    result = {"success": True, "project": key, "loads": True, **check}
+    result = {"success": True, "project": key, "loads": True, **check, **hashes}
 
     baseline_path = _baseline_path(key)
     if os.path.exists(baseline_path):
