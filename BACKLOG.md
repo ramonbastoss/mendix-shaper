@@ -74,12 +74,76 @@ name holds up the code that does the actual work.
       server's write from the user's own work, which quietly removes the
       rollback story. A check against `git status` is cheap.
 
+## Driving the IDE's own version-control operations
+
+**The intent, stated once so the rest of this section reads straight:** certain
+operations have to be performed *by Studio Pro* rather than next to it, and the
+server should be able to perform them. Not because the IDE is nicer, but because
+a commit made with plain git does not carry the `refs/notes/mx_metadata` note —
+so it shows no change list in history and the build service will not package
+that revision. `docs/driving-studio-pro.md` has the measurement. The Extensions
+API cannot help: its `IVersionControlService` is three read-only members, with no
+`Commit`, `Pull` or `Push` to call. UI Automation is the only route, and
+`engine/studio_pro_ui.py` is it.
+
+The line that makes this acceptable, and the whole reason it does not contradict
+the section below: **this initiates operations, it does not answer questions.**
+Picking a menu item is recoverable — the operation raises its own dialog and
+that dialog cancels. Clicking `Yes` on *"Do you want to save the changes to ..."*
+is not.
+
+Built so far: `engine/studio_pro_ui.py` (primitives, `resolve_instance`,
+`check_language`) and `engine/branch_lines.py`
+(`create_branch_line`, `check_download_path`). No tool is registered for either.
+
+- [ ] **The confirming click has never been exercised.** `create_branch_line`
+      runs end to end up to `OK` and `dry_run=True` stops there, verified. Every
+      line after `Invoke-El $okBtn` is unrun code, because running it means
+      creating a branch line on a real server. Create one deliberately, capture
+      what Studio Pro puts on screen afterwards, and only then trust that path.
+- [ ] **The post-create download flow is unmeasured, and the function says so.**
+      `download=True` currently validates the destination, creates the branch,
+      and then *reports* whatever dialog appears instead of clicking it — the
+      same refusal shape as a blocked close. Finish it from a captured dialog,
+      not from a guess. Note that `Download from Version Control Server` is a
+      two-screen wizard whose first screen came up with an **empty** app list
+      until refreshed, so the prompt after a create is probably a different
+      dialog and has to be captured on its own.
+- [ ] **No `tests/test_branch_lines.py`.** `check_download_path` and
+      `_ps_string` are pure and cover the interesting cases — path budget,
+      non-ASCII, reserved characters, quote escaping — and need no IDE.
+      `_sequence` can at least be parse-checked: feeding the generated script to
+      `[System.Management.Automation.Language.Parser]::ParseFile` catches a
+      syntax error that would otherwise only surface mid-dialog. Both were run by
+      hand on 2026-11-24 and passed; neither is committed as a test.
+- [ ] **Every selector is an English control name and nothing can be done about
+      it.** No control in these dialogs carries an `AutomationId`.
+      `check_language` turns the resulting "element not found" into a diagnosis,
+      which is mitigation, not a fix. If Studio Pro ever exposes ids, replace the
+      name matching; until then this is a known ceiling, not a bug to chase.
+- [ ] **Decide whether any of this becomes a tool.** It is engine-only today,
+      deliberately — the same freeze that applies to editing applies here, and
+      the surface question is harder for an operation that reaches a server than
+      for one that writes a file. A tool that creates a branch line is a tool
+      that writes to the Team Server on a caller's initiative.
+- [ ] **`commit` and `pull` are the operations that motivated this, and neither
+      is built.** The chain is measured (`Version Control > Commit` and
+      `> Pull`, both `Invoke`-able, with `Push (0 commit(s)).` reporting its own
+      count in its name) but a commit dialog has a message box and a file list,
+      and a pull can raise a merge conflict. The conflict case is the one place
+      in this whole area that is a modelling decision rather than an automation
+      step, and it has to stop and ask.
+
 ## Deliberately not built: answering Studio Pro's dialogs
 
 `tool_close_app` and `tool_open_app` stop at a modal and report its text. UI
 Automation could click the button instead — `read_dialog` already walks the
 dialog's tree, and invoking a button from there is a couple of lines. It is
 left out, and the reasoning should be read before anyone adds it.
+
+(This is the other side of the section above. Driving a menu was added; clicking
+a question was not, and the two were separated on purpose rather than by
+accident of what got written first.)
 
 Both modals have an answer that cannot be undone. **Discard** throws away a
 model that exists only in Studio Pro's memory, with nothing on disk to restore

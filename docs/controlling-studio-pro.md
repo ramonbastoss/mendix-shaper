@@ -61,7 +61,7 @@ carries the app's name and the *branch* — and neither has to resemble the
 folder on disk. Measured on a checkout whose folder, branch and app name were
 three different strings: nothing in the title identified the working copy.
 
-The command line does:
+The command line does, **when there is one**:
 
 ```powershell
 (Get-CimInstance Win32_Process -Filter "ProcessId=$pid").CommandLine
@@ -70,14 +70,46 @@ The command line does:
 Compare the `.mpr` paths case-insensitively — Windows paths are, and the
 casing in a command line comes from whoever typed it.
 
-Two more observations about instances:
+### Correction: the command line is not sufficient on its own
+
+This note first said the command line was *the* reliable signal. It is not, and
+the way it fails is the worst available: **an app opened from inside the IDE
+leaves `studiopro.exe` running with no argument at all.** The command line is
+then just the executable, the `.mpr` lookup matches nothing, and a caller
+concludes no instance has the model open while the app sits on screen in front
+of the user. A false negative, on the guard that protects writing.
+
+Measured twice. First on 2026-11-23, where `instances(mpr)` returned `[]` and
+`close_app` answered `not_open` with the app visibly open. Again on 2026-11-24,
+where `instances(mpr)` returned `[]` for a working copy that was open, loaded
+and holding its lock file.
+
+Three signals exist and **none is sufficient alone**:
+
+| signal | what it proves | what it cannot say |
+|---|---|---|
+| `<app>.mpr.lock` | *some* instance holds this working copy | which process |
+| command line | the exact `.mpr` path | anything, if the IDE was not launched with it |
+| window title | the app name and the **branch** | the folder on disk |
+
+Crossing the lock with the branch is what resolves it: read the branch from git
+for that working copy, then match a title ending in `(<branch>, Git)`.
+`engine/studio_pro_ui.resolve_instance` does exactly that and reports which
+signal answered, so a caller can tell a clean match from a triangulated one.
+
+⚠️ It still cannot separate **two checkouts of one branch** — working copies get
+reused by branch name, so both produce the same title. That case is reported as
+a question rather than guessed at.
+
+One more observation about instances:
 
 - **An idle instance is replaced; a loaded one is not.** A Studio Pro sitting
   on the start page with no app disappears when an app opens. Two instances
   each holding a different app coexist happily, at roughly 2 GB each.
-- **An open working copy carries a `<app>.mpr.lock`** next to the `.mpr`
-  (hidden; `-Force` to see it). Cheap to check, but whether it survives a crash
-  was not measured, so the command line remains the reliable signal.
+
+And one about pids: **do not cache them.** Measured across one session on
+2026-11-24, an instance holding the same working copy came back under a
+different pid after being reopened. Re-resolve at each step.
 
 ## Closing
 
