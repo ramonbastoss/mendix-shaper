@@ -194,3 +194,7 @@ Pro (1,283 leaves reproduced, no divergence), against an `mx check` baseline
 taught is in [`docs/renaming-across-the-model.md`](docs/renaming-across-the-model.md).
 
 The tool surface on top of all of it is still not built, and still on purpose.
+
+## License
+
+[MIT](LICENSE). Fork it, rename it, change it, ship it, sell it — the one condition is that the copyright and permission notice travel with the copy, so keep `LICENSE` in your fork.
