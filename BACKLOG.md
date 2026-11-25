@@ -47,15 +47,21 @@ name holds up the code that does the actual work.
       process is not writing; it does not prove Studio Pro has the model open
       in memory, which is the case that actually loses work. Either find a real
       detection or make the refusal louder.
-- [ ] **A misspelled argument is dropped, not refused.** FastMCP builds each
+- [x] **A misspelled argument is dropped, not refused.** ~~FastMCP builds each
       tool's schema from the function signature and leaves
       `additionalProperties` unset, so JSON Schema allows extras and anything
       the caller passes under a name the tool does not declare is silently
-      discarded. On a reader that is harmless. On a write tool it means the
-      call runs with a default in place of the argument that was meant to
-      govern it - which is the kind of failure that looks like success in the
-      report. Settle this before the first editing tool, not after: either
-      tighten the schema or have each write tool reject unknown keys itself.
+      discarded.~~ Settled both ways at once rather than by picking one:
+      `tools._utils.refuse_unknown_arguments` sets `extra="forbid"` on every
+      registered tool's argument model, so pydantic raises on the extra key
+      *and* the published schema gains `additionalProperties: false`. Applied
+      as a sweep over everything registered, not as a per-tool decorator -
+      the tool somebody forgets to decorate is the one that fails this way.
+      It raises rather than returning quietly when it cannot reach FastMCP's
+      internals, because a no-op here reports success, which is the failure it
+      exists to prevent. Verified by stdio handshake, not by import:
+      `tool_validate_model(save_as_baselines=true)` came back as an error
+      instead of running a check that saved no baseline.
 - [x] **No dry run.** ~~`write_unit` either writes or raises.~~ Settled the way
       the split pointed at, rather than with a flag: an operation is a function
       from one decoded document to another, `storage` is the only thing that

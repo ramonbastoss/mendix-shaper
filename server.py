@@ -1,5 +1,6 @@
 from mcp.server.fastmcp import FastMCP
 
+from tools._utils import refuse_unknown_arguments
 from tools.close_app import close_app
 from tools.list_projects import list_projects
 from tools.open_app import open_app
@@ -109,6 +110,15 @@ def tool_validate_model(project: str = None, save_as_baseline: bool = False) -> 
     If 'project' is omitted, the configured default is used.
     """
     return validate_model(project, save_as_baseline)
+
+
+# --- and then, over all of them ---------------------------------------------
+#
+# Every tool above now refuses an argument it does not declare, instead of
+# dropping it and running on the default. It has to be here, after the last
+# registration and outside the __main__ guard, so that importing this module
+# gets the same server the client talks to.
+HARDENED = refuse_unknown_arguments(mcp)
 
 
 if __name__ == "__main__":

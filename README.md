@@ -63,6 +63,7 @@ the server that exposes it.
 | `tools/` | one module per exposed tool: validate arguments, call the engine, shape the answer. |
 | `server.py` | registration, and the docstring each tool is read through. |
 | `docs/` | what Studio Pro does, measured — see [`docs/`](docs/). |
+| `tests/` | one file per module, run directly (`python tests/test_storage.py`). No runner is a dependency. |
 
 The dependency runs one way, and that is the whole point of the split: the
 engine can be exercised directly, over a corpus, against what Studio Pro
@@ -116,6 +117,15 @@ Four things follow from that:
    reversible with `git checkout` on `mprcontents/` and the `.mpr`. This server
    does not run that for you, by design — reverting is a destructive action and
    belongs to whoever is watching.
+
+**A tool refuses an argument it does not declare.** FastMCP's default is to
+drop one, so a caller that misspells `save_as_baseline` gets a run that saves
+no baseline and a reply that reads like success. Every registered tool is
+hardened at startup — pydantic raises on the extra key, and the published
+schema says `additionalProperties: false` so a client can refuse it before
+sending. A call that was meant to be governed by an argument should fail, not
+quietly run on the default; that matters most for the tools this server does
+not have yet.
 
 **Close Studio Pro before writing.** It holds the `.mpr` open and keeps the
 model in memory; saving from it afterwards would overwrite the edit. There is a

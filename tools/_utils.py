@@ -118,3 +118,71 @@ def temp_file(*parts: str) -> str:
     path = os.path.abspath(os.path.join(TEMP_DIR, *parts))
     os.makedirs(os.path.dirname(path), exist_ok=True)
     return path
+
+
+def refuse_unknown_arguments(mcp) -> list[str]:
+    """Make every registered tool reject an argument it does not declare.
+
+    FastMCP builds each tool's argument model from the function signature and
+    leaves pydantic's `extra` at its default, which is `ignore`. So an argument
+    the tool does not declare is **silently discarded** and the parameter it was
+    meant to govern runs on its default. Measured on mcp 1.30.0: calling
+    `tool_validate_model` with `save_as_baselines=true` - one letter wrong -
+    returns a normal result in which no baseline was saved.
+
+    On a reader that is a wasted call. On a tool that writes to a model it is
+    the worst failure shape there is: the write happens, under settings nobody
+    chose, and the reply says it succeeded. An agent reading that reply has no
+    way to tell. Hence this runs before the first editing tool is registered
+    rather than after.
+
+    Setting `extra="forbid"` on the argument model fixes both halves at once:
+    pydantic raises on the extra key, so the call fails instead of running, and
+    the published schema gains `additionalProperties: false`, so a client that
+    validates can refuse it before it is even sent.
+
+    **Applied to every tool the server has, not opted into per tool.** A
+    decorator would have to be remembered on each new tool, and the one it is
+    forgotten on is the one that fails this way - which is the same argument
+    the BACKLOG makes for not offering a `force` flag. A sweep cannot be
+    forgotten.
+
+    Raises rather than returning quietly when it cannot do its job: it reaches
+    into FastMCP's tool manager, so a version that reorganises that would
+    otherwise turn this into a no-op that still reports success - the very
+    failure it exists to prevent. Returns the tool names it hardened.
+    """
+    try:
+        tools = mcp._tool_manager.list_tools()
+    except AttributeError as e:
+        raise RuntimeError(
+            f"Cannot reach FastMCP's registered tools to harden them ({e}). "
+            f"This server will not start without that guarantee: without it a "
+            f"misspelled argument is dropped in silence and the call runs on "
+            f"defaults. See requirements.txt for the mcp version this was "
+            f"written against."
+        )
+
+    if not tools:
+        raise RuntimeError(
+            "No tools are registered, so hardening them is a no-op. Call "
+            "refuse_unknown_arguments after the @mcp.tool() definitions, not "
+            "before."
+        )
+
+    hardened = []
+    for tool in tools:
+        model = tool.fn_metadata.arg_model
+        model.model_config = {**model.model_config, "extra": "forbid"}
+        model.model_rebuild(force=True)
+        tool.parameters = model.model_json_schema(by_alias=True)
+        if tool.parameters.get("additionalProperties") is not False:
+            raise RuntimeError(
+                f"Tool '{tool.name}' still publishes a schema that accepts "
+                f"undeclared arguments after being hardened, so pydantic did "
+                f"not honour the rebuild. Fix this before serving: a tool in "
+                f"this state drops a misspelled argument instead of refusing "
+                f"it."
+            )
+        hardened.append(tool.name)
+    return hardened
