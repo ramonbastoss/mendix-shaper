@@ -31,9 +31,14 @@ Then the app was opened in Studio Pro:
   is not known.
 
 The repair was to set that row's `ContentsHash` to
-`base64(sha256(blob))`, with the IDE closed. `mx check` stayed at 0 errors and
-the IDE reopened without a dialog; the `.mpr` now shows as modified in
-`git status`, which is what a save from the IDE also produces.
+`base64(sha256(blob))`, with the IDE closed. `mx check` stayed at 0 errors,
+the IDE reopened without a dialog, and **the edited microflow was then listed
+in the Changes pane** — *measured*, same person, same IDE. The `.mpr` now
+shows as modified in `git status`, which is what a save from the IDE also
+produces.
+
+Hash stale → edit missing from Changes; hash written, nothing else touched →
+edit listed. That pins the symptom on the hash.
 
 ## What this changes
 
@@ -42,7 +47,9 @@ cost would be paid later, in a merge. The loader and `mx check` do not notice
 it — that half stands. The IDE does, immediately, and silently: it appears to
 decide what changed by comparing hashes in the `.mpr` rather than by reading
 the blob, so an edit whose hash was never written is an edit the IDE does not
-know about. *That mechanism is a hypothesis*; the symptom is measured.
+know about. The symptom and its repair are measured; *that the IDE compares
+against the committed `.mpr`'s hashes is the likeliest reading, not
+verified*.
 
 The practical consequence is worse than a late merge conflict. The person
 reviewing the change in the IDE sees nothing to review, and a commit made
