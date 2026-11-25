@@ -97,6 +97,12 @@ def tool_validate_model(project: str = None, save_as_baseline: bool = False) -> 
     first (a reference pointing at a missing unit crashes it and produces no
     consistency error at all), then 'mx check' for the CE#### errors Studio Pro
     would show.
+    It also compares every ContentsHash in the .mpr with its .mxunit blob and
+    reports 'stale_hashes'. Both mx passes accept a stale hash, but Studio Pro
+    then leaves that unit out of its Changes pane, so the edit is invisible in
+    the IDE. A non-zero count means a blob was written by hand (bson.encode +
+    open(..., 'wb')) instead of through engine.storage.write_unit, which
+    updates the hash; fix it before handing the app back.
     Call it after any write to the model, and before one too: an absolute error
     count means nothing without a baseline, because an app can carry hundreds
     of pre-existing errors. Pass save_as_baseline=true on a known-good model to

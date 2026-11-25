@@ -15,6 +15,7 @@ a rule somebody measured once and wrote down. That is what this folder is for.
 | [duplicate-identities.md](duplicate-identities.md) | `$ID` and `GUID` are unique within a unit — how a shallow copy breaks that, and why only the IDE's *save* ever says so |
 | [unit-identity.md](unit-identity.md) | a unit's file name *is* its root `$ID` — nothing checks it, the IDE repairs it silently, and the unit's diff is what breaks |
 | [changing-an-attribute.md](changing-an-attribute.md) | renaming and retyping one: four citation forms and only one is qualified, and why `mx check` is the oracle a sweep cannot replace |
+| [stale-contents-hash.md](stale-contents-hash.md) | a blob written without its hash loads and checks clean, and the IDE's Changes pane does not list it — the edit is on disk and invisible where it is reviewed |
 | [editing-alongside-studio-pro.md](editing-alongside-studio-pro.md) | getting a write made outside the IDE into an IDE that is already open |
 | [controlling-studio-pro.md](controlling-studio-pro.md) | closing the IDE and opening it again: what it costs, how to tell which working copy an instance holds, and the two modals that stop it |
 | [driving-studio-pro.md](driving-studio-pro.md) | operating the IDE once it is open: why a commit from outside it does not count, why no supported API exists, and the four measurements that shape every selector |
