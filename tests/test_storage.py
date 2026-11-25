@@ -254,6 +254,48 @@ def repaired():
 case("a repaired root $ID is accepted again", repaired, False)
 
 
+# -- renamed_entities, threaded through write_unit ----------------------------
+#
+# The guard itself is exercised in tests/test_associations.py. What is checked
+# here is only that write_unit hands the argument on, because a parameter that
+# is accepted and then ignored looks exactly like one that works.
+
+def domain_model(child="OtherModule.MyTarget"):
+    return {
+        "$ID": uuid.uuid4().bytes_le,
+        "$Type": "DomainModels$DomainModel",
+        "Associations": [2, {
+            "$ID": uuid.uuid4().bytes_le,
+            "$Type": "DomainModels$Association",
+            "Child": child,
+            "GUID": uuid.uuid4().bytes_le,
+            "Name": "MyEntity_MyTarget",
+            "Owner": "Default",
+            "ParentPointer": uuid.uuid4().bytes_le,
+            "StorageFormat": "Column",
+            "Type": "Reference",
+        }],
+    }
+
+
+def rename_through_write(renamed_entities=None):
+    fresh_model()
+    doc = domain_model()
+    storage.create_unit(MPR, doc, CONTAINER)
+    after = storage.decode(storage.read_blob(storage.unit_path(
+        MPR, str(uuid.UUID(bytes_le=doc["$ID"])))))
+    after["Associations"][1]["Child"] = "OtherModule.MyRenamedTarget"
+    storage.write_unit(MPR, str(uuid.UUID(bytes_le=doc["$ID"])), after,
+                       renamed_entities)
+
+
+case("write_unit refuses a renamed Child when not told it is a rename",
+     rename_through_write, True)
+
+case("write_unit accepts it when told", lambda: rename_through_write(
+    {"OtherModule.MyTarget": "OtherModule.MyRenamedTarget"}), False)
+
+
 if WORKSPACE:
     shutil.rmtree(WORKSPACE, ignore_errors=True)
 

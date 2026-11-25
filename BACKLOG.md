@@ -75,6 +75,16 @@ name holds up the code that does the actual work.
       destroying uncommitted work is not something a tool should do on its own
       initiative. Revisit only if real use makes the manual step the thing that
       goes wrong.
+- [ ] **A batch of writes is not atomic, and a guard that fires mid-batch
+      leaves the model half edited.** Measured on 2026-11-24: a rename over 103
+      units was refused on the fifth, after four had been written - blob and
+      `ContentsHash` both. The guard's own "Nothing was written" is true of that
+      unit and false of the operation, and the next run counted 99 units
+      because four were already renamed. The fix is a habit the code should
+      enforce instead of asking for: run every guard over the whole plan in a
+      dry loop, and open the writing loop only if all of them pass. Until then,
+      check the final state across the whole app rather than across the units
+      the script expected to touch.
 - [ ] **Nothing refuses to write to a dirty working copy.** Editing on top of
       uncommitted changes means `git checkout` can no longer separate this
       server's write from the user's own work, which quietly removes the

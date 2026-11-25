@@ -151,6 +151,63 @@ def retyped():
 case("guard catches Reference -> ReferenceSet with the GUID kept",
      retyped, True)
 
+# -- the guard, told the edit is a rename -------------------------------------
+#
+# `Child` is the far end by qualified name, so renaming that entity changes a
+# storage leaf without moving any storage. Measured on a real rename: the guard
+# fired on one unit of 103, and obeying it - reissuing the GUID - would have
+# inserted a duplicate row for an association that already existed.
+
+RENAMED = {"OtherModule.MyTarget": "OtherModule.MyRenamedTarget"}
+
+
+def child_renamed(**overrides):
+    """The model with the far end's entity renamed, plus any overrides."""
+    after = copy.deepcopy(model())
+    assoc = associations.find(after, "MyEntity_MyTarget")
+    assoc["Child"] = "OtherModule.MyRenamedTarget"
+    assoc.update(overrides)
+    return after
+
+
+case("guard reads a renamed Child as a relocation when not told otherwise",
+     lambda: storage.assert_storage_identity(model(), child_renamed()), True)
+
+case("told it is that rename, the same write is accepted",
+     lambda: storage.assert_storage_identity(model(), child_renamed(), RENAMED),
+     False)
+
+case("a Child the mapping does not produce is refused — the sweep overshot",
+     lambda: storage.assert_storage_identity(
+         model(), child_renamed(Child="OtherModule.MyRenamedTargetDetail"),
+         RENAMED), True)
+
+case("a move declared as a rename is refused",
+     lambda: storage.assert_storage_identity(
+         model(), child_renamed(ParentPointer=NEW_PARENT), RENAMED), True)
+
+case("and still refused with a fresh GUID, which the other path allows",
+     lambda: storage.assert_storage_identity(
+         model(), child_renamed(ParentPointer=NEW_PARENT,
+                                GUID=uuid.uuid4().bytes_le), RENAMED), True)
+
+case("a reissued GUID is refused — a rename keeps the catalogue row",
+     lambda: storage.assert_storage_identity(
+         model(), child_renamed(GUID=uuid.uuid4().bytes_le), RENAMED), True)
+
+
+def vanished():
+    after = child_renamed()
+    after["CrossAssociations"] = [2]
+    storage.assert_storage_identity(model(), after, RENAMED)
+
+
+case("an association that disappeared is refused", vanished, True)
+
+case("an untouched document is accepted on this path too",
+     lambda: storage.assert_storage_identity(model(), copy.deepcopy(model()),
+                                             RENAMED), False)
+
 # -- the operation ------------------------------------------------------------
 
 

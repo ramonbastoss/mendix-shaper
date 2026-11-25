@@ -84,6 +84,38 @@ confirmed against a sibling FK's `DELETE_RULE` in `dba_constraints`),
 the old column to the new one. Whatever the association held is gone once the
 old column is dropped, whichever `GUID` you use.
 
+## 🔴 Renaming the far entity moves no storage, and looks like it did
+
+`Child` is a qualified name, so **renaming the entity at the far end rewrites
+it** — and a guard that watches the storage leaves reads that as a relocation
+and refuses the write. Measured on 2026-11-24, Studio Pro 10.24.13, renaming
+one entity across an app of ~6,000 units: 311 leaves changed across 103 units,
+of which 12 were `Child`, and `engine/storage.assert_storage_identity` stopped
+the sweep on the first unit holding one.
+
+**The obvious repair is the actual defect.** The guard asks for a fresh `GUID`,
+and giving one here would insert a second row into `MendixSystem$Association`
+for an association that already exists — precisely the damage the guard exists
+to prevent, arrived at by obeying it. Nothing moved: same owner, same target
+entity, same column, new name on the catalogue's `ASSOCIATION_NAME`, which is
+an `UPDATE`.
+
+So the guard is right about what it measured and wrong about what it concluded,
+and the distinction it cannot make from two documents alone is *why* a name
+changed. `write_unit(..., renamed_entities={old: new})` supplies that, and it
+buys a **stricter** check rather than an exemption: `Child` may change, and only
+from a name in the mapping to the name it maps to; `ParentPointer`,
+`StorageFormat`, `Type`, `Owner` and `GUID` must be identical; and no
+association may appear or disappear. An edit that declares itself a rename and
+moves an end is refused on that path even where the general guard would have
+accepted it on a fresh `GUID`.
+
+> The mapping is matched whole, never as a substring, and that catches the
+> other way a rename goes wrong. A sweep that rewrites `MyModule.MyThing`
+> without a boundary on the right also rewrites `MyModule.MyThingDetail`; the
+> `Child` it produces is in neither the old set nor the new one, so it is
+> refused here rather than committed and found later.
+
 ## `Owner: Both` means both entities carry the member
 
 An association is a *member* of the entity it hangs off, so it appears in that

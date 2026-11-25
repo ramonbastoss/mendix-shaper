@@ -271,6 +271,14 @@ ASSOCIATION_STORAGE_KEYS = ("ParentPointer", "Child", "StorageFormat", "Type")
 # Where a domain model keeps its associations.
 ASSOCIATION_BUCKETS = ("Associations", "CrossAssociations")
 
+# What a rename may not touch. Wider than the set above and missing `Child`,
+# on purpose: a rename rewrites names, and `Child` is the one storage leaf
+# that holds one. Everything else has to come through a rename identical -
+# including `Owner` and `GUID`, which are not in the set above because the
+# question there is "did the storage move", and the question here is "did
+# anything other than the name move".
+RENAME_FROZEN_KEYS = ("ParentPointer", "StorageFormat", "Type", "Owner", "GUID")
+
 
 def associations_by_id(document: dict) -> dict:
     """`{$ID: association}` for every association in a domain model.
@@ -286,7 +294,80 @@ def associations_by_id(document: dict) -> dict:
     return found
 
 
-def assert_storage_identity(before: dict, after: dict) -> None:
+def _assert_renamed_only(before: dict, after: dict,
+                         renamed_entities: dict) -> None:
+    """The guard below, for an edit that is a rename and nothing else.
+
+    `Child` holds the far end **by qualified name** - `ParentPointer` holds the
+    near end by `$ID`, and that asymmetry is measured in
+    `docs/moving-an-association-end.md`. So renaming an entity rewrites the
+    `Child` of every association pointing at it, and the storage guard reads
+    that as a relocation and refuses the write.
+
+    🔴 The guard is right about what it measured and wrong about what it
+    concluded, and the obvious repair is the actual defect: giving those
+    associations a fresh `GUID` would insert a second row into
+    `MendixSystem$Association` for an association that already exists - exactly
+    the damage the guard is there to prevent, arrived at by obeying it.
+    Measured on 2026-11-24 renaming one entity: 103 units, and the guard fired
+    on one of them.
+
+    So this path is **stricter, not looser**. A rename may change `Child`, and
+    only from a name in `renamed_entities` to the name it maps to; every other
+    storage leaf, plus `Owner` and `GUID`, has to be identical; and no
+    association may appear or disappear. An edit that claims to be a rename and
+    moves something is refused here even when the general guard would have let
+    it through on a fresh `GUID`.
+
+    The mapping is matched **whole**, not as substrings, which catches the
+    other way a rename goes wrong: a sweep that rewrites `MyModule.MyThing`
+    without a boundary on the right also rewrites `MyModule.MyThingDetail`, and
+    the resulting `Child` is in neither the old set nor the new one. That is a
+    refusal here and a model-wide corruption otherwise.
+    """
+    problems = []
+
+    appeared = sorted(after.keys() - before.keys())
+    vanished = sorted(before.keys() - after.keys())
+    if appeared or vanished:
+        problems.append(
+            f"{len(appeared)} association(s) appeared and {len(vanished)} "
+            f"disappeared; a rename creates and deletes nothing"
+        )
+
+    for object_id, after_assoc in after.items():
+        before_assoc = before.get(object_id)
+        if before_assoc is None:
+            continue
+        name = after_assoc.get("Name") or "<unnamed>"
+
+        frozen = [k for k in RENAME_FROZEN_KEYS
+                  if before_assoc.get(k) != after_assoc.get(k)]
+        if frozen:
+            problems.append(f"{name} changed {', '.join(frozen)}")
+
+        old_child, new_child = before_assoc.get("Child"), after_assoc.get("Child")
+        if old_child != new_child and renamed_entities.get(old_child) != new_child:
+            problems.append(
+                f"{name} points at {new_child!r}, which is not what renaming "
+                f"{old_child!r} produces"
+            )
+
+    if problems:
+        detail = "; ".join(problems)
+        raise RuntimeError(
+            f"This write was declared a rename of {len(renamed_entities)} "
+            f"entity name(s), but {len(problems)} association(s) in this unit "
+            f"changed in a way a rename does not produce. Either the edit is "
+            f"doing more than renaming - in which case say so and drop the "
+            f"renamed_entities argument, so the storage guard applies in full "
+            f"- or the rewrite overshot its target. Nothing was written. "
+            f"{detail}"
+        )
+
+
+def assert_storage_identity(before: dict, after: dict,
+                            renamed_entities: dict = None) -> None:
     """Refuse to move an association's storage while keeping its `GUID`.
 
     An association's `GUID` is not decoration: it is the **primary key of its
@@ -316,7 +397,21 @@ def assert_storage_identity(before: dict, after: dict) -> None:
 
     `engine/associations.move_end` does the right thing by construction; this
     exists for every other path to disk, including a one-off script.
+
+    `renamed_entities` is `{old qualified name: new qualified name}`, and it
+    says the edit is a rename of those entities and nothing else. It does not
+    relax this guard - it swaps it for a stricter one, because `Child` holds a
+    qualified name and a rename therefore changes storage leaves without moving
+    any storage. See `_assert_renamed_only`, which is where that is explained
+    and measured. Omit it and the full check below applies, which is the right
+    default for every other edit.
     """
+    if renamed_entities:
+        return _assert_renamed_only(
+            associations_by_id(before), associations_by_id(after),
+            renamed_entities,
+        )
+
     old, new = associations_by_id(before), associations_by_id(after)
     offenders = []
     for object_id, after_assoc in new.items():
@@ -343,7 +438,8 @@ def assert_storage_identity(before: dict, after: dict) -> None:
         )
 
 
-def write_unit(mpr_path: str, unit_id: str, document: dict) -> dict:
+def write_unit(mpr_path: str, unit_id: str, document: dict,
+               renamed_entities: dict = None) -> dict:
     """Write a document back as `unit_id`, and update the `.mpr` to match.
 
     The order matters on failure, not on success: the blob is written first and
@@ -365,6 +461,14 @@ def write_unit(mpr_path: str, unit_id: str, document: dict) -> dict:
     only says so on save), and an association may not relocate its storage
     while keeping its `GUID` (`assert_storage_identity` - the database only
     says so at sync).
+
+    `renamed_entities` declares this write to be a rename of `{old qualified
+    name: new}` and nothing else, which replaces that last guard with a
+    stricter one. It is needed because an association names its far end by
+    qualified name, so renaming an entity legitimately changes a storage leaf -
+    see `_assert_renamed_only`. Declaring it is not a way past the check: a
+    rename that moves anything is refused on this path and would have been
+    allowed on the other.
     """
     assert_writable(mpr_path)
 
@@ -376,7 +480,7 @@ def write_unit(mpr_path: str, unit_id: str, document: dict) -> dict:
     assert_round_trips(before)
     assert_root_identity(unit_id, document)
     assert_unique_identities(document)
-    assert_storage_identity(decode(before), document)
+    assert_storage_identity(decode(before), document, renamed_entities)
 
     after = encode(document)
     if after == before:
